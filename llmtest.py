@@ -1,20 +1,18 @@
-# Import necessary libraries
+import json
+import torch
 from transformers import GPT2LMHeadModel, GPT2Config, GPT2Tokenizer
 from torch.utils.data import Dataset, DataLoader
-import os
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-import torch
 
+# Define the dataset class
 class TextDataset(Dataset):
-    def __init__(self, tokenizer, file_path, block_size=128):
-        with open(file_path, encoding="utf-8") as f:
-            lines = [line.strip() for line in f if len(line) > 0 and not line.isspace()]
-        
-        print(f"Total lines read: {len(lines)}")
-
-        # Adjust this line to keep shorter sequences
-        self.examples = [torch.tensor(tokenizer.encode(line, add_special_tokens=True)[:block_size]) for line in lines]
-
+    def __init__(self, tokenizer, conversations, block_size=128):
+        # Tokenize the conversations
+        self.examples = []
+        for conversation in conversations:
+            # Flatten the conversation pairs and tokenize
+            flattened_conversation = [line for pair in conversation for line in pair]
+            tokens = tokenizer.encode(' '.join(flattened_conversation), truncation=True, max_length=block_size)
+            self.examples.append(torch.tensor(tokens))
         print(f"Total examples processed: {len(self.examples)}")
 
     def __len__(self):
@@ -23,15 +21,28 @@ class TextDataset(Dataset):
     def __getitem__(self, i):
         return self.examples[i]
 
+# Function to load and preprocess the data
+def load_and_preprocess_data(tokenizer, file_path):
+    conversations = []
+    with open(file_path, 'r', encoding='utf-8') as file:
+        for line in file:
+            data = json.loads(line)
+            conversations.append(data['conversations'])
+    return conversations
 
-# Initialize the tokenizer and model
+# Initialize the tokenizer
 tokenizer = GPT2Tokenizer.from_pretrained('distilgpt2')
+
+# Load and preprocess the data
+conversations = load_and_preprocess_data(tokenizer, 'train.jsonl')
+
+# Create the dataset
+dataset = TextDataset(tokenizer, conversations)
+data_loader = DataLoader(dataset, batch_size=1, shuffle=True)
+
+# Load the model configuration and initialize the model
 configuration = GPT2Config.from_pretrained('distilgpt2', output_hidden_states=False)
 model = GPT2LMHeadModel.from_pretrained('distilgpt2', config=configuration)
-
-# Load the dataset
-dataset = TextDataset(tokenizer, "dataset.txt")
-data_loader = DataLoader(dataset, batch_size=1, shuffle=True)  # set to 1 due to slow pc
 
 # Training settings
 device = torch.device("cpu")
